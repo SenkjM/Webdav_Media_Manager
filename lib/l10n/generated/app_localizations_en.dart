@@ -530,16 +530,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get accountRenameTitle => 'Renaming changes the drive';
 
   @override
-  String get accountUsernameChangedTitle => 'Username changed';
-
-  @override
   String accountRenameContent(Object name) {
     return 'Tracks from \"$name\" will become unbound. Restoring the old name can restore them.\nKeep the name unchanged when only changing the address.';
   }
-
-  @override
-  String get accountUsernameChangedContent =>
-      'The username is not part of the binding. A new username may point to a different directory, so the old path may not exist.';
 
   @override
   String get accountConfirmChange => 'Confirm change';

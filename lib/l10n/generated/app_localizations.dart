@@ -1059,23 +1059,11 @@ abstract class AppLocalizations {
   /// **'改名等同于换盘'**
   String get accountRenameTitle;
 
-  /// No description provided for @accountUsernameChangedTitle.
-  ///
-  /// In zh, this message translates to:
-  /// **'用户名已修改'**
-  String get accountUsernameChangedTitle;
-
   /// No description provided for @accountRenameContent.
   ///
   /// In zh, this message translates to:
   /// **'「{name}」的曲目将变为「未绑定源」，改回原名即可恢复。\n仅改地址时请保持名称不变。'**
   String accountRenameContent(Object name);
-
-  /// No description provided for @accountUsernameChangedContent.
-  ///
-  /// In zh, this message translates to:
-  /// **'用户名不参与绑定；新用户名对应别的目录时原路径可能不存在。'**
-  String get accountUsernameChangedContent;
 
   /// No description provided for @accountConfirmChange.
   ///

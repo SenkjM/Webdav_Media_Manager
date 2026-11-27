@@ -341,11 +341,11 @@ class _AccountsScreenState extends State<AccountsScreen> {
         return false;
       }
       if (existing != null) {
+        // Only the account *name* is the library binding key (rows reference
+        // it by source_name); the auth username/URL are just credentials and
+        // never rebind anything, so changing them must not prompt.
         final renamed = name != existing.name.trim();
-        final userChanged =
-            !isCloud && userCtrl.text.trim() != existing.username.trim();
-        if ((renamed || userChanged) &&
-            !await _confirmIdentityChange(context, existing, name, renamed)) {
+        if (renamed && !await _confirmRename(context, existing)) {
           return false;
         }
       }
@@ -866,26 +866,18 @@ class _AccountsScreenState extends State<AccountsScreen> {
     return false;
   }
 
-  /// Warn that editing the name (or username) changes what the rows point at.
-  Future<bool> _confirmIdentityChange(
+  /// Warn that renaming the account changes what library rows point at.
+  Future<bool> _confirmRename(
     BuildContext context,
     WebDavAccount existing,
-    String newName,
-    bool renamed,
   ) async {
     final l10n = AppLocalizations.of(context)!;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
-        title: Text(
-          renamed ? l10n.accountRenameTitle : l10n.accountUsernameChangedTitle,
-        ),
-        content: Text(
-          renamed
-              ? l10n.accountRenameContent(existing.name)
-              : l10n.accountUsernameChangedContent,
-        ),
+        title: Text(l10n.accountRenameTitle),
+        content: Text(l10n.accountRenameContent(existing.name)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),

@@ -521,15 +521,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get accountRenameTitle => '改名等同于换盘';
 
   @override
-  String get accountUsernameChangedTitle => '用户名已修改';
-
-  @override
   String accountRenameContent(Object name) {
     return '「$name」的曲目将变为「未绑定源」，改回原名即可恢复。\n仅改地址时请保持名称不变。';
   }
-
-  @override
-  String get accountUsernameChangedContent => '用户名不参与绑定；新用户名对应别的目录时原路径可能不存在。';
 
   @override
   String get accountConfirmChange => '确认修改';
@@ -5798,16 +5792,9 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get accountRenameTitle => '改名等同換磁碟';
 
   @override
-  String get accountUsernameChangedTitle => '使用者名稱已修改';
-
-  @override
   String accountRenameContent(Object name) {
     return '「$name」的曲目將變為「未綁定源」，改回原名即可恢復。\n僅修改位址時請保持名稱不變。';
   }
-
-  @override
-  String get accountUsernameChangedContent =>
-      '使用者名稱不參與綁定；新使用者名稱對應其他目錄時原路徑可能不存在。';
 
   @override
   String get accountConfirmChange => '確認修改';
