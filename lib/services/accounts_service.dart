@@ -356,34 +356,11 @@ class AccountsService extends ChangeNotifier {
         'remote_dir': a.remotePath,
       };
     } else {
+      // Cloud drivers keep their form config verbatim. Crypt's nested `source`
+      // driver is resolved in Core from `source_account_id` / the
+      // `source_account_id_name` snapshot (build_driver_config), so the stored
+      // credentials never duplicate the source's secrets.
       credentials = driverCfg ?? {};
-      // Crypt: embed resolved source if name present but nested source absent.
-      if (a.providerType == 'crypt' &&
-          credentials.containsKey('source_account_id_name') &&
-          !credentials.containsKey('source')) {
-        final sourceName = credentials['source_account_id_name'] as String?;
-        if (sourceName != null) {
-          final src = accountForSource(sourceName);
-          if (src != null) {
-            final srcCfg = await loadDriverConfig(src.id);
-            final srcCreds = <String, dynamic>{};
-            if (src.providerType == 'webdav') {
-              // Rust create_driver('webdav', …) requires 'url'; the URL lives in
-              // src.url (base_url), not in the credential map — add it explicitly.
-              srcCreds['url'] = src.url;
-              srcCreds['username'] = src.username;
-              srcCreds['password'] = await passwordFor(src.id) ?? '';
-              srcCreds['remote_dir'] = src.remotePath;
-            } else {
-              srcCreds.addAll(srcCfg ?? {});
-            }
-            credentials['source'] = {
-              'provider_type': src.providerType,
-              'config': srcCreds,
-            };
-          }
-        }
-      }
     }
 
     final coreJson = jsonEncode({
