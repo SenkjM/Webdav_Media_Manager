@@ -1,8 +1,12 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+import 'package:webdav_media_manager/providers/app_state.dart';
 import 'package:webdav_media_manager/services/accounts_service.dart';
+import 'package:webdav_media_manager/services/rust_core_service.dart';
 
 import 'e2e_support.dart';
 
@@ -17,7 +21,11 @@ void main() {
     await bootApp(tester);
     ensureE2eAccount();
 
+    // `ensureE2eAccount` only writes the account into the Rust core; reload the
+    // Dart mirror before looking it up (a fresh device has no cached rows).
     final accounts = appService<AccountsService>(tester);
+    await accounts.init();
+    await appService<AppState>(tester).registerAllAccounts();
     final source = accounts.accountForSource(e2eAccountName);
     expect(source, isNotNull, reason: 'the e2e account is missing');
 
@@ -46,6 +54,29 @@ void main() {
       expect(created.providerType, 'crypt');
 
       await accounts.saveDriverConfig(created.id, config);
+
+      // The account form verifies before saving and the verification used to
+      // fail because only the flat source id/name reached Core.
+      final verified = RustCoreService.accountVerify('crypt', jsonEncode(config));
+      expect(verified, isNotNull);
+      expect(verified!.startsWith('error:'), isFalse, reason: verified);
+      final decoded = jsonDecode(verified) as Map<String, dynamic>;
+      expect(decoded['ok'], isTrue, reason: verified);
+
+      // A crypt account without a source must fail verification with the
+      // dedicated message instead of a generic driver error.
+      final missingSource = RustCoreService.accountVerify(
+          'crypt', jsonEncode({'password': 'e2e-crypt-pass'}));
+      expect(missingSource, isNotNull);
+      expect(missingSource!.contains('err.cryptNoSourceName'), isTrue,
+          reason: missingSource);
+
+      // Listing through the saved account builds the driver from the DB and
+      // resolves the nested source there (no Dart-side assembly any more).
+      final listedRemote = RustCoreService.accountListDir(created.id, '/');
+      expect(listedRemote, isNotNull);
+      expect(listedRemote!.startsWith('error:'), isFalse,
+          reason: listedRemote);
 
       final loaded = await accounts.loadDriverConfig(created.id);
       expect(loaded, isNotNull, reason: 'the crypt config did not come back');

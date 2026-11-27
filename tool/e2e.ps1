@@ -23,6 +23,7 @@ Suites:
   sync     sync root field + credential round trip    (integration_test/e2e_sync_test.dart)
   backup   backup archive create/upload/restore       (integration_test/e2e_backup_test.dart)
   crypt    crypt source config save/reload            (integration_test/e2e_crypt_config_test.dart)
+  token    token-managed cloud providers verify setup (integration_test/e2e_token_verify_test.dart)
   ui_regressions  preset editor + cache budget dialog (integration_test/e2e_ui_regressions_test.dart)
   all      read-only probes in one boot              (integration_test/e2e_full_test.dart)
 
@@ -57,7 +58,7 @@ On failure the run drops logcat and a uiautomator dump into
 [CmdletBinding()]
 param(
     [ValidateSet('boot', 'webdav', 'cast', 'music', 'cue', 'cbz', 'queue',
-        'scrape', 'maintenance', 'sync', 'backup', 'crypt', 'ui_regressions',
+        'scrape', 'maintenance', 'sync', 'backup', 'crypt', 'token', 'ui_regressions',
         'castplay', 'ui', 'all')]
     [string] $Suite = 'all',
 
@@ -139,6 +140,7 @@ $targets = @{
     sync     = 'integration_test\e2e_sync_test.dart'
     backup   = 'integration_test\e2e_backup_test.dart'
     crypt    = 'integration_test\e2e_crypt_config_test.dart'
+    token    = 'integration_test\e2e_token_verify_test.dart'
     ui_regressions = 'integration_test\e2e_ui_regressions_test.dart'
     castplay = 'integration_test\e2e_cast_play_test.dart'
     ui       = 'integration_test\e2e_layout_test.dart'
