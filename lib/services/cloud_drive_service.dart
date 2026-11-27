@@ -555,6 +555,8 @@ class CloudDriveService extends ChangeNotifier {
         remotePath: remotePath,
         accountId: accountId,
         kind: streamKind,
+        size: item.size,
+        viaProxy: true,
       );
     }
     return WebDavStreamSource(
@@ -564,6 +566,7 @@ class CloudDriveService extends ChangeNotifier {
       remotePath: remotePath,
       accountId: accountId,
       kind: streamKind,
+      size: item.size,
     );
   }
 

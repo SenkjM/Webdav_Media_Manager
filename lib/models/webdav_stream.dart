@@ -18,6 +18,8 @@ class WebDavStreamSource {
     required this.remotePath,
     required this.accountId,
     this.kind = StreamKind.video,
+    this.size = 0,
+    this.viaProxy = false,
   });
 
   final String uri;
@@ -28,4 +30,12 @@ class WebDavStreamSource {
 
   /// 这条流是视频还是音乐。只影响媒体会话的文案与队列语义。
   final StreamKind kind;
+
+  /// 远端内容长度（字节）；驱动没给出时为 0。
+  ///
+  /// 播放器不依赖它，预热用它决定是否顺带读尾部（MP4 的 moov 常在尾部）。
+  final int size;
+
+  /// [uri] 是否指向本机 Rust 代理（MustProxy 驱动），而不是上游直链。
+  final bool viaProxy;
 }

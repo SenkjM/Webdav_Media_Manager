@@ -22,6 +22,7 @@ import '../services/platform_export_service.dart';
 import '../services/settings_service.dart';
 import '../services/video_subtitle_binder.dart';
 import '../services/video_playback_service.dart';
+import '../utils/stream_prewarm.dart';
 import '../services/video_queue_controller.dart';
 import '../services/webdav_service.dart';
 import '../utils/subtitle_sidecar.dart';
@@ -163,6 +164,9 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     final music = context.read<AudioPlayerService>();
     _service = service;
     _buildQueue();
+    // libmpv 实例与远端源解析互不依赖：并行启动播放器，别让它留在关键路径上。
+    service.warmup();
+    final musicPaused = music.pauseForVideo();
     try {
       var source = widget.source;
       if (source == null) {
@@ -215,7 +219,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
       _resolved = source;
       _title.value = source.name;
       // Music and video must never play at the same time.
-      await music.pauseForVideo();
+      await musicPaused;
+      // MustProxy 的第一次区间读取要先解析直链与容器头；趁 libmpv 起来时预热，
+      // 把这段冷启动从首帧里拿掉。预算内完成即可，超时也继续播放。
+      await prewarmStream(source);
       final restored = SettingsService.clampVideoRate(settings.videoLastRate);
       final player = await service.prepare(
         source,
@@ -237,7 +244,9 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
         await player.setRate(restored);
         _rate.value = restored;
       }
-      await player.open(service.mediaFor(source));
+      // prepare() 已经让播放器以暂停方式加载了同一个 media（通知栏需要 duration），
+      // 这里只恢复播放，避免第二次 loadfile 再走一遍冷启动。
+      await player.play();
       _armSubtitles(
         WebDavItem(
           name: source.name,
@@ -389,6 +398,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     });
     try {
       await service.endBoost();
+      await prewarmStream(source);
       final settings = context.read<SettingsService>();
       final rate = SettingsService.clampVideoRate(settings.videoLastRate);
       await service.prepare(
@@ -397,7 +407,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
         initialRate: rate,
       );
       _title.value = item.name;
-      await player.open(service.mediaFor(source), play: true);
+      // prepare() 已加载同一 media（暂停），这里恢复播放即可。
+      await player.play();
       if ((rate - 1.0).abs() > 0.001) await player.setRate(rate);
       _armSubtitles(item);
     } catch (e) {

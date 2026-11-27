@@ -61,6 +61,15 @@ class VideoPlaybackService extends ChangeNotifier {
   String? get title => _source?.name;
   String? get lastError => _lastError;
 
+  /// Start the shared media_kit instance before the remote source resolves.
+  ///
+  /// Creating libmpv + its audio/video device graph is the most expensive local
+  /// step of opening the player. It does not depend on the URL, so callers warm
+  /// it in parallel with resolving the stream source.
+  void warmup() {
+    _handler.videoPlayer;
+  }
+
   /// Take over the media session for [source] and return the video player.
   ///
   /// [bufferSizeMb] becomes `PlayerConfiguration.bufferSize` (libmpv demuxer
