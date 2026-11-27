@@ -6,7 +6,7 @@ import 'package:dio/dio.dart';
 /// （localdev/OpenList-Worker/src/backend/internal/driver/base.ts）：
 /// [get] 返回直链 + 必需请求头，下载与流式都走「直链 + 头」。
 /// 上传能力由驱动 uploadStream 原语声明。
-enum CloudDownloadMode { cryptSequential, direct, cryptRange }
+enum CloudDownloadMode { direct, cryptRange }
 
 /// Short status chip shown in the accounts list for an account.
 ///

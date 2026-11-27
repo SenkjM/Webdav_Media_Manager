@@ -36,15 +36,12 @@ import 'services/webdav_service.dart';
 import 'theme/app_theme.dart';
 import 'utils/app_snack.dart';
 import 'utils/l10n_host.dart';
-import 'utils/third_party_licenses.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // Probe Rust core version at debug startup — non-fatal, Dart services
   // remain source of truth until round 4 DB cutover.
   RustCoreService.debugLogVersion();
-  // libsodium (ISC) ships as a native asset; Flutter does not collect it.
-  registerThirdPartyLicenses();
   // Drop last run's prefetch bytes before any player opens a cached file.
   await PrefetchCache.wipe();
   // Required once before any media_kit Player is created.

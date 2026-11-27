@@ -1113,60 +1113,6 @@ abstract class AppLocalizations {
   /// **'断点续传的临时文件保留上限与清理'**
   String get downloadQueueSettingsSubtitle;
 
-  /// No description provided for @encryptionSettings.
-  ///
-  /// In zh, this message translates to:
-  /// **'加密设置'**
-  String get encryptionSettings;
-
-  /// No description provided for @encryptionSettingsSubtitle.
-  ///
-  /// In zh, this message translates to:
-  /// **'设置 Crypt 传输和 secretbox 引擎'**
-  String get encryptionSettingsSubtitle;
-
-  /// No description provided for @encryptionCryptSection.
-  ///
-  /// In zh, this message translates to:
-  /// **'Crypt 传输'**
-  String get encryptionCryptSection;
-
-  /// No description provided for @encryptionSecretboxSection.
-  ///
-  /// In zh, this message translates to:
-  /// **'内容 secretbox 引擎'**
-  String get encryptionSecretboxSection;
-
-  /// No description provided for @cryptLibsodiumPrefer.
-  ///
-  /// In zh, this message translates to:
-  /// **'优先使用 libsodium'**
-  String get cryptLibsodiumPrefer;
-
-  /// No description provided for @cryptLibsodiumPreferSub.
-  ///
-  /// In zh, this message translates to:
-  /// **'只影响 rclone crypt 内容块解密/加密；文件名编码仍用 Dart。原生库按设备架构随应用打包，加载不了时自动走 Dart。'**
-  String get cryptLibsodiumPreferSub;
-
-  /// No description provided for @cryptLibsodiumUnavailable.
-  ///
-  /// In zh, this message translates to:
-  /// **'当前平台没有可用的 libsodium，或加载失败，已使用 Dart 实现'**
-  String get cryptLibsodiumUnavailable;
-
-  /// No description provided for @cryptLibsodiumStatusDart.
-  ///
-  /// In zh, this message translates to:
-  /// **'当前引擎：纯 Dart'**
-  String get cryptLibsodiumStatusDart;
-
-  /// No description provided for @cryptLibsodiumStatusSodium.
-  ///
-  /// In zh, this message translates to:
-  /// **'当前引擎：libsodium {version}'**
-  String cryptLibsodiumStatusSodium(String version);
-
   /// No description provided for @customHome.
   ///
   /// In zh, this message translates to:
@@ -1670,18 +1616,6 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'总体积上限'**
   String get dlTotalSizeLimit;
-
-  /// No description provided for @dlCryptSequential.
-  ///
-  /// In zh, this message translates to:
-  /// **'Crypt 顺序流'**
-  String get dlCryptSequential;
-
-  /// No description provided for @dlCryptSequentialSub.
-  ///
-  /// In zh, this message translates to:
-  /// **'只在上传和下载时生效；在线播放与传统续传不变'**
-  String get dlCryptSequentialSub;
 
   /// No description provided for @dlCleanNow.
   ///

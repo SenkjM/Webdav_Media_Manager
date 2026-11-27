@@ -183,22 +183,6 @@
   "manageAccountsSubtitle": "添加 / 编辑 / 删除 WebDAV 服务器",
   "downloadQueueSettings": "任务队列",
   "downloadQueueSettingsSubtitle": "断点续传的临时文件保留上限与清理",
-  "encryptionSettings": "加密设置",
-  "encryptionSettingsSubtitle": "设置 Crypt 传输和 secretbox 引擎",
-  "encryptionCryptSection": "Crypt 传输",
-  "encryptionSecretboxSection": "内容 secretbox 引擎",
-  "cryptLibsodiumPrefer": "优先使用 libsodium",
-  "cryptLibsodiumPreferSub": "只影响 rclone crypt 内容块解密/加密；文件名编码仍用 Dart。原生库按设备架构随应用打包，加载不了时自动走 Dart。",
-  "cryptLibsodiumUnavailable": "当前平台没有可用的 libsodium，或加载失败，已使用 Dart 实现",
-  "cryptLibsodiumStatusDart": "当前引擎：纯 Dart",
-  "cryptLibsodiumStatusSodium": "当前引擎：libsodium {version}",
-  "@cryptLibsodiumStatusSodium": {
-    "placeholders": {
-      "version": {
-        "type": "String"
-      }
-    }
-  },
   "customHome": "自定义主页",
   "customHomeSubtitle": "在根页面按返回时回到这里",
   "rememberNetworkPath": "文件源记住上次路径",
@@ -283,8 +267,6 @@
   "dlRetainDuration": "保留时长",
   "unitHours": "小时",
   "dlTotalSizeLimit": "总体积上限",
-  "dlCryptSequential": "Crypt 顺序流",
-  "dlCryptSequentialSub": "只在上传和下载时生效；在线播放与传统续传不变",
   "dlCleanNow": "立即清理",
   "dlCleanNowSub": "按上面的上限删掉过期的半截文件",
   "dlNothingToClean": "没有需要清理的半截文件",

@@ -183,22 +183,6 @@
   "manageAccountsSubtitle": "Add / edit / delete WebDAV servers",
   "downloadQueueSettings": "Task queue",
   "downloadQueueSettingsSubtitle": "Set retention and cleanup for resumable-download temporary files",
-  "encryptionSettings": "Encryption",
-  "encryptionSettingsSubtitle": "Configure Crypt transfers and the secretbox engine",
-  "encryptionCryptSection": "Crypt transfers",
-  "encryptionSecretboxSection": "Content secretbox engine",
-  "cryptLibsodiumPrefer": "Prefer libsodium",
-  "cryptLibsodiumPreferSub": "Affects rclone crypt content blocks only; filename codecs stay Dart. The native library ships for the device architecture; if it cannot be loaded, Dart is used.",
-  "cryptLibsodiumUnavailable": "libsodium is not available on this platform or failed to load; using Dart",
-  "cryptLibsodiumStatusDart": "Active engine: pure Dart",
-  "cryptLibsodiumStatusSodium": "Active engine: libsodium {version}",
-  "@cryptLibsodiumStatusSodium": {
-    "placeholders": {
-      "version": {
-        "type": "String"
-      }
-    }
-  },
   "customHome": "Custom home",
   "customHomeSubtitle": "Return to this home from other screens",
   "rememberNetworkPath": "Remember last network library path",
@@ -283,8 +267,6 @@
   "dlRetainDuration": "Retention period",
   "unitHours": "hours",
   "dlTotalSizeLimit": "Total size limit",
-  "dlCryptSequential": "Crypt sequential stream",
-  "dlCryptSequentialSub": "Takes effect on uploads and downloads only; online playback and legacy resume are unchanged",
   "dlCleanNow": "Clean now",
   "dlCleanNowSub": "Delete expired partial files per the limits above",
   "dlNothingToClean": "No partial files to clean",

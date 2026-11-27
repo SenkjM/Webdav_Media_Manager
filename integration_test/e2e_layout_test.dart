@@ -3,7 +3,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:webdav_media_manager/screens/accounts_screen.dart';
 import 'package:webdav_media_manager/screens/download_settings_screen.dart';
-import 'package:webdav_media_manager/screens/encryption_settings_screen.dart';
 import 'package:webdav_media_manager/screens/file_extensions_screen.dart';
 import 'package:webdav_media_manager/screens/image_settings_screen.dart';
 import 'package:webdav_media_manager/screens/manga_library_settings_screen.dart';
@@ -103,7 +102,6 @@ void main() {
     await pumpFrames(tester, frames: 8, label: 'settings align pop');
     await visit('accounts', const AccountsScreen());
     await visit('download', const DownloadSettingsScreen());
-    await visit('encryption', const EncryptionSettingsScreen());
     await visit('video', const VideoSettingsScreen());
     await visit('image', const ImageSettingsScreen());
     await visit('file types', const FileExtensionsScreen());

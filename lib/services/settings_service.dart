@@ -20,8 +20,6 @@ import '../models/video_settings.dart';
 import '../utils/cover_image.dart';
 import '../utils/subtitle_sidecar.dart';
 
-import 'package:openlist_crypt/openlist_crypt.dart';
-
 import 'rust_core_service.dart';
 import 'transcode_preset_catalog.dart';
 import '../models/page_turn_direction.dart';
@@ -78,16 +76,6 @@ class SettingsService extends ChangeNotifier {
   /// 断点续传的半截文件（.part）保留上限：时长与总体积。
   static const _kDownloadPartMaxAgeHours = 'download_part_max_age_hours';
   static const _kDownloadPartMaxMb = 'download_part_max_mb';
-  static const _kCryptSequentialDownload = 'crypt_sequential_download';
-
-  /// Prefer libsodium FFI for crypt content secretbox (falls back to Dart).
-  static const _kPreferLibsodiumSecretbox = 'prefer_libsodium_secretbox';
-
-  /// Compile-time default from `--dart-define=OPENLIST_CRYPT_LIBSODIUM=true`.
-  static const bool defaultPreferLibsodiumSecretbox = bool.fromEnvironment(
-    'OPENLIST_CRYPT_LIBSODIUM',
-    defaultValue: false,
-  );
   static const _kVideoSubtitlePosition = 'video_subtitle_position';
   static const _kVideoSubtitleOffset = 'video_subtitle_offset';
   static const _kVideoSubtitleFontSize = 'video_subtitle_font_size';
@@ -353,8 +341,6 @@ class SettingsService extends ChangeNotifier {
   int _videoBufferSizeMb = defaultVideoBufferMb;
   int _downloadPartMaxAgeHours = defaultDownloadPartMaxAgeHours;
   int _downloadPartMaxMb = defaultDownloadPartMaxMb;
-  bool _cryptSequentialDownload = true;
-  bool _preferLibsodiumSecretbox = defaultPreferLibsodiumSecretbox;
   double _videoLongPressRate = defaultVideoLongPressRate;
   double _videoLastRate = 1.0;
   bool _videoConfirmExit = false;
@@ -573,23 +559,6 @@ class SettingsService extends ChangeNotifier {
 
   int get downloadPartMaxAgeHours => _downloadPartMaxAgeHours;
   int get downloadPartMaxMb => _downloadPartMaxMb;
-  bool get cryptSequentialDownloadEnabled => _cryptSequentialDownload;
-
-  /// User preference: try libsodium for crypt content secretbox.
-  /// Actual engine may still be Dart when the shared library cannot load
-  /// (no bundled library for this platform / ABI, or the load failed).
-  bool get preferLibsodiumSecretboxEnabled => _preferLibsodiumSecretbox;
-
-  /// Whether libsodium FFI is usable on this device.
-  ///
-  /// Attempts the load once ([tryLoadLibsodium] caches the result), then
-  /// reports [libsodiumSecretboxReady]. Not tied to any ABI: openlist_crypt's
-  /// build hook bundles the library for whichever ABI the APK targets.
-  bool get libsodiumSecretboxAvailable {
-    tryLoadLibsodium();
-    return libsodiumSecretboxReady;
-  }
-
   /// 流式音乐页的播放模式（单曲循环 / 顺序 / 列表循环）。
   MusicStreamPlayMode get musicStreamPlayMode => _musicStreamPlayMode;
 
@@ -1134,11 +1103,6 @@ class SettingsService extends ChangeNotifier {
           64,
           1024 * 64,
         );
-    _cryptSequentialDownload =
-        _readKvBool(_kCryptSequentialDownload, true);
-    _preferLibsodiumSecretbox =
-        _readKvBool(_kPreferLibsodiumSecretbox, defaultPreferLibsodiumSecretbox);
-    applySecretboxBackendPreference();
     _videoLongPressRate = _clampRate(
       _readKvDouble(_kVideoLongPressRate, defaultVideoLongPressRate),
     );
@@ -1901,31 +1865,6 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> setCryptSequentialDownloadEnabled(bool enabled) async {
-    _cryptSequentialDownload = enabled;
-    RustCoreService.kvSet(_kCryptSequentialDownload, enabled.toString());
-    notifyListeners();
-  }
-
-  /// Persist prefer-libsodium and apply [preferLibsodiumSecretbox] /
-  /// [preferDartSecretbox] immediately.
-  Future<void> setPreferLibsodiumSecretboxEnabled(bool enabled) async {
-    _preferLibsodiumSecretbox = enabled;
-    RustCoreService.kvSet(_kPreferLibsodiumSecretbox, enabled.toString());
-    applySecretboxBackendPreference();
-    notifyListeners();
-  }
-
-  /// Apply the persisted preference to the openlist_crypt secretbox backend.
-  /// Safe to call at startup after prefs load and whenever the toggle changes.
-  void applySecretboxBackendPreference() {
-    if (_preferLibsodiumSecretbox) {
-      preferLibsodiumSecretbox();
-    } else {
-      preferDartSecretbox();
-    }
-  }
-
   static int _clampBufferMb(int mb) {
     if (mb < minVideoBufferMb) return minVideoBufferMb;
     if (mb > maxVideoBufferMb) return maxVideoBufferMb;
@@ -2231,7 +2170,6 @@ class SettingsService extends ChangeNotifier {
     'video_buffer_size_mb': _videoBufferSizeMb,
     'download_part_max_age_hours': _downloadPartMaxAgeHours,
     'download_part_max_mb': _downloadPartMaxMb,
-    'crypt_sequential_download': _cryptSequentialDownload,
     'video_long_press_rate': _videoLongPressRate,
     'video_last_rate': _videoLastRate,
     'video_confirm_exit': _videoConfirmExit,
@@ -2563,11 +2501,6 @@ class SettingsService extends ChangeNotifier {
     }
     if (json['download_part_max_mb'] is int) {
       await setDownloadPartMaxMb(json['download_part_max_mb'] as int);
-    }
-    if (json['crypt_sequential_download'] is bool) {
-      await setCryptSequentialDownloadEnabled(
-        json['crypt_sequential_download'] as bool,
-      );
     }
     if (json['video_long_press_rate'] is num) {
       await setVideoLongPressRate(

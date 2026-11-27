@@ -550,37 +550,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get downloadQueueSettingsSubtitle => '断点续传的临时文件保留上限与清理';
 
   @override
-  String get encryptionSettings => '加密设置';
-
-  @override
-  String get encryptionSettingsSubtitle => '设置 Crypt 传输和 secretbox 引擎';
-
-  @override
-  String get encryptionCryptSection => 'Crypt 传输';
-
-  @override
-  String get encryptionSecretboxSection => '内容 secretbox 引擎';
-
-  @override
-  String get cryptLibsodiumPrefer => '优先使用 libsodium';
-
-  @override
-  String get cryptLibsodiumPreferSub =>
-      '只影响 rclone crypt 内容块解密/加密；文件名编码仍用 Dart。原生库按设备架构随应用打包，加载不了时自动走 Dart。';
-
-  @override
-  String get cryptLibsodiumUnavailable =>
-      '当前平台没有可用的 libsodium，或加载失败，已使用 Dart 实现';
-
-  @override
-  String get cryptLibsodiumStatusDart => '当前引擎：纯 Dart';
-
-  @override
-  String cryptLibsodiumStatusSodium(String version) {
-    return '当前引擎：libsodium $version';
-  }
-
-  @override
   String get customHome => '自定义主页';
 
   @override
@@ -849,12 +818,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get dlTotalSizeLimit => '总体积上限';
-
-  @override
-  String get dlCryptSequential => 'Crypt 顺序流';
-
-  @override
-  String get dlCryptSequentialSub => '只在上传和下载时生效；在线播放与传统续传不变';
 
   @override
   String get dlCleanNow => '立即清理';
@@ -5862,37 +5825,6 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get downloadQueueSettingsSubtitle => '續傳暫存檔保留上限與清理';
 
   @override
-  String get encryptionSettings => '加密設定';
-
-  @override
-  String get encryptionSettingsSubtitle => '設定 Crypt 傳輸和 secretbox 引擎';
-
-  @override
-  String get encryptionCryptSection => 'Crypt 傳輸';
-
-  @override
-  String get encryptionSecretboxSection => '內容 secretbox 引擎';
-
-  @override
-  String get cryptLibsodiumPrefer => '優先使用 libsodium';
-
-  @override
-  String get cryptLibsodiumPreferSub =>
-      '只影響 rclone crypt 內容塊解密/加密；檔名編碼仍用 Dart。原生庫依裝置架構隨應用程式打包，無法載入時自動走 Dart。';
-
-  @override
-  String get cryptLibsodiumUnavailable =>
-      '目前平台沒有可用的 libsodium，或載入失敗，已使用 Dart 實作';
-
-  @override
-  String get cryptLibsodiumStatusDart => '目前引擎：純 Dart';
-
-  @override
-  String cryptLibsodiumStatusSodium(String version) {
-    return '目前引擎：libsodium $version';
-  }
-
-  @override
   String get customHome => '自訂首頁';
 
   @override
@@ -6161,12 +6093,6 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get dlTotalSizeLimit => '總容量上限';
-
-  @override
-  String get dlCryptSequential => 'Crypt 順序流';
-
-  @override
-  String get dlCryptSequentialSub => '只在上傳和下載時生效；線上播放與傳統續傳不變';
 
   @override
   String get dlCleanNow => '立即清理';

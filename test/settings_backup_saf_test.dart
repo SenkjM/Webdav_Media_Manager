@@ -14,14 +14,6 @@ import 'package:webdav_media_manager/services/settings_service.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('crypt sequential download defaults to true', () async {
-    SharedPreferences.setMockInitialValues({});
-    await SharedPreferences.getInstance();
-    final s = SettingsService();
-    await s.init();
-    expect(s.cryptSequentialDownloadEnabled, isTrue);
-  });
-
   test('new backup keys round-trip; custom_download_* never exported/imported',
       () async {
     SharedPreferences.setMockInitialValues({});
@@ -32,7 +24,6 @@ void main() {
     await s.setMusicCacheMaxMb(512);
     await s.setDownloadPartMaxAgeHours(48);
     await s.setDownloadPartMaxMb(256);
-    await s.setCryptSequentialDownloadEnabled(false);
     await s.setMangaCacheMaxMb(128);
     await s.setMangaRetention(CacheRetention.never);
     await s.setMangaCustomRetentionDuration(const Duration(hours: 12));
@@ -58,7 +49,6 @@ void main() {
     expect(exported['music_cache_max_mb'], 512);
     expect(exported['download_part_max_age_hours'], 48);
     expect(exported['download_part_max_mb'], 256);
-    expect(exported['crypt_sequential_download'], isFalse);
     expect(exported['manga_cache_max_mb'], 128);
     expect(exported['manga_cache_retention'], CacheRetention.never.storageKey);
     expect(exported['music_default_stream'], isTrue);
@@ -87,7 +77,6 @@ void main() {
     expect(s2.musicCacheMaxMb, 512);
     expect(s2.downloadPartMaxAgeHours, 48);
     expect(s2.downloadPartMaxMb, 256);
-    expect(s2.cryptSequentialDownloadEnabled, isFalse);
     expect(s2.mangaCacheMaxMb, 128);
     expect(s2.mangaRetention, CacheRetention.never);
     expect(s2.musicDefaultStream, isTrue);

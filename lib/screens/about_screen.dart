@@ -377,7 +377,6 @@ class _AboutScreenState extends State<AboutScreen> {
           Text(l10n.aboutCreditsHarness),
           Text(l10n.aboutCreditsOpenList),
           Text(l10n.aboutCreditsRclone),
-          Text('openlist_crypt：${l10n.aboutCreditsPackages}'),
           const SizedBox(height: 28),
           _heading(context, l10n.aboutLicense),
           const SizedBox(height: 8),

@@ -562,38 +562,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Set retention and cleanup for resumable-download temporary files';
 
   @override
-  String get encryptionSettings => 'Encryption';
-
-  @override
-  String get encryptionSettingsSubtitle =>
-      'Configure Crypt transfers and the secretbox engine';
-
-  @override
-  String get encryptionCryptSection => 'Crypt transfers';
-
-  @override
-  String get encryptionSecretboxSection => 'Content secretbox engine';
-
-  @override
-  String get cryptLibsodiumPrefer => 'Prefer libsodium';
-
-  @override
-  String get cryptLibsodiumPreferSub =>
-      'Affects rclone crypt content blocks only; filename codecs stay Dart. The native library ships for the device architecture; if it cannot be loaded, Dart is used.';
-
-  @override
-  String get cryptLibsodiumUnavailable =>
-      'libsodium is not available on this platform or failed to load; using Dart';
-
-  @override
-  String get cryptLibsodiumStatusDart => 'Active engine: pure Dart';
-
-  @override
-  String cryptLibsodiumStatusSodium(String version) {
-    return 'Active engine: libsodium $version';
-  }
-
-  @override
   String get customHome => 'Custom home';
 
   @override
@@ -877,13 +845,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get dlTotalSizeLimit => 'Total size limit';
-
-  @override
-  String get dlCryptSequential => 'Crypt sequential stream';
-
-  @override
-  String get dlCryptSequentialSub =>
-      'Takes effect on uploads and downloads only; online playback and legacy resume are unchanged';
 
   @override
   String get dlCleanNow => 'Clean now';
