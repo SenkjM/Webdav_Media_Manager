@@ -1,7 +1,5 @@
 // ignore_for_file: avoid_print
 
-import 'dart:convert';
-
 import 'package:flutter/foundation.dart';
 
 import 'rust_core_service.dart';
@@ -16,11 +14,10 @@ import 'rust_core_service.dart';
 /// media without direct filesystem access.
 ///
 /// ## R12 cutover status
-/// - [LocalStreamBridge] is **deleted** (R12): MustProxy (crypt) streaming and
-///   DLNA LAN cast now route through [RustProxyStreamBridge], which drives the
-///   `wdmm_proxy_register_stream` / `wdmm_proxy_stream_set_result` FFI added in
-///   this round. Dart supplies Range bytes to the proxy via a
-///   `NativeCallable.listener` async reply channel; no Dart HTTP server.
+/// - [LocalStreamBridge] is **deleted** (R12): MustProxy (crypt) streaming is
+///   registered through `wdmm_proxy_register_account`, so the Rust proxy builds
+///   the driver from the database and streams content in 1 MiB
+///   `get_content_range` chunks. No Dart byte callbacks, no Dart HTTP server.
 /// - Settings → Developer / Rust Proxy panel drives start/stop/register for the
 ///   Rust proxy path (Settings section still present).
 ///
@@ -64,36 +61,6 @@ class RustProxyBridge {
   /// Returns the bound proxy port, or -1 if not running.
   static int port() {
     return RustCoreService.proxyPort();
-  }
-
-  /// Register [filePath] with the proxy.
-  ///
-  /// Returns a map with:
-  /// - `token`         — opaque string to pass to [unregister].
-  /// - `pathTemplate`  — e.g. `"/s/<token>"`.
-  /// - `port`          — the proxy port.
-  /// - `url`           — full URL: `http://127.0.0.1:{port}{pathTemplate}`.
-  ///
-  /// Returns null on failure.
-  ///
-  /// [name] is optional; used for Content-Type guessing (e.g. `"track.mp3"`).
-  static Map<String, dynamic>? registerFile(String filePath, {String? name}) {
-    final result = RustCoreService.proxyRegisterFile(filePath, name: name);
-    if (result == null || result.startsWith('error:')) {
-      debugPrint('[RustProxyBridge] registerFile failed: $result');
-      return null;
-    }
-    try {
-      final map = jsonDecode(result) as Map<String, dynamic>;
-      final p = map['port'] as int? ?? 0;
-      final tmpl = map['path_template'] as String? ?? '';
-      map['url'] = 'http://127.0.0.1:$p$tmpl';
-      debugPrint('[RustProxyBridge] registered ${map['url']}');
-      return map;
-    } catch (e) {
-      debugPrint('[RustProxyBridge] registerFile decode error: $e');
-      return null;
-    }
   }
 
   /// Unregister [token] from the proxy.

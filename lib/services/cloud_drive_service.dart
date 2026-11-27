@@ -17,7 +17,7 @@ import 'wdmm_vfs.dart';
 import 'wdmm_vfs/driver_registry.dart';
 import 'resumable_download.dart';
 import 'rust_core_service.dart';
-import 'rust_proxy_stream_bridge.dart';
+import 'rust_proxy_bridge.dart';
 
 /// 云盘 provider 的应用内入口（99 §7）。
 ///
@@ -166,16 +166,16 @@ class CloudDriveService extends ChangeNotifier {
 
   /// Tokens for active Rust proxy stream registrations owned by this service.
   /// Cleaned up in [dispose] — each token corresponds to a MustProxy playback
-  /// session routed through [RustProxyStreamBridge].
-  final List<String> _proxyStreamTokens = [];
+  /// session registered through `wdmm_proxy_register_account`.
+  final List<String> _accountStreamTokens = [];
 
   @override
   void dispose() {
-    // Unregister all active stream slots from the Rust proxy.
-    for (final t in _proxyStreamTokens) {
-      RustProxyStreamBridge.unregister(t);
+    // Unregister all active account-stream slots from the Rust proxy.
+    for (final t in _accountStreamTokens) {
+      RustCoreService.proxyUnregister(t);
     }
-    _proxyStreamTokens.clear();
+    _accountStreamTokens.clear();
     for (final d in _drivers.values) {
       unawaited(d.dispose());
     }
@@ -299,7 +299,6 @@ class CloudDriveService extends ChangeNotifier {
     void Function(int received, int total)? onProgress,
     CancelToken? cancelToken,
     int resumeFrom = 0,
-    bool useCryptSequentialDownload = false,
     void Function(CloudDownloadMode mode)? onMode,
     int? expectedRemoteSize,
     DateTime? expectedRemoteModified,
@@ -324,44 +323,54 @@ class CloudDriveService extends ChangeNotifier {
     if (item.rawUrl != null) {
       onMode?.call(CloudDownloadMode.direct);
     } else {
-      onMode?.call(
-        resumeFrom > 0 || !useCryptSequentialDownload
-            ? CloudDownloadMode.cryptRange
-            : CloudDownloadMode.cryptSequential,
-      );
+      onMode?.call(CloudDownloadMode.cryptRange);
     }
     if (item.rawUrl == null) {
-      // MustProxy（crypt，99 §7.5）：解密流直接写目标文件；续传交给驱动的区间
-      // 读取——crypt 的 openContentRange 会按块边界精确解密，不重下前面的块。
+      // MustProxy（crypt，99 §7.5）：解密流在 Core 内按大区间块直接落盘，
+      // Dart 不接收文件字节、不 base64、不填内存缓冲。续传由 resumeFrom 交给
+      // Core 追加写；crypt 的区间读取按 64 KiB 块边界精确解密，不重下前面的块。
       // 大小未知时拒绝下载：整包/分块的判定依赖密文总长，未知大小会被误当成
       // 「源回了整包」，静默产出损坏的空文件比明确报错糟糕得多。
       if (item.size <= 0) {
         throw WdmmVfsException('err.downloadSizeUnknown|${item.name}');
       }
-      final driver = _requireDriver(accountId);
       final canResume = resumeFrom > 0 && item.size > resumeFrom;
-      var received = canResume ? resumeFrom : 0;
-      final sink = localFile.openWrite(
-        mode: canResume ? FileMode.append : FileMode.write,
-      );
-      try {
-        await for (final chunk
-            in canResume
-                ? driver.openContentRange(remotePath, resumeFrom, item.size - 1)
-                : (useCryptSequentialDownload
-                      ? driver.openDownloadContent(
-                          remotePath,
-                          cancelToken: cancelToken,
-                        )
-                      : driver.openContent(remotePath))) {
-          sink.add(chunk);
-          received += chunk.length;
-          onProgress?.call(received, item.size > 0 ? item.size : received);
-        }
-        await sink.flush();
-      } finally {
-        await sink.close();
+      final remote = _remote(accountId, remotePath);
+      final total = item.size;
+      var lastName = canResume ? resumeFrom : 0;
+      Timer? ticker;
+      if (onProgress != null) {
+        ticker = Timer.periodic(const Duration(milliseconds: 200), (_) {
+          final got = localFile.existsSync() ? localFile.lengthSync() : lastName;
+          if (got != lastName) {
+            lastName = got;
+            onProgress(got, total);
+          }
+        });
       }
+      try {
+        final result = await RustCoreService.runOffMain<String?>(
+          () => RustCoreService.accountDownloadToFile(
+            accountId,
+            remote,
+            localFile.path,
+            resumeFrom: canResume ? resumeFrom : 0,
+          ),
+        );
+        if (result == null) {
+          throw WdmmVfsException('FFI unavailable');
+        }
+        if (result.startsWith('error:')) {
+          throw WdmmVfsException(result.substring(6));
+        }
+      } finally {
+        ticker?.cancel();
+      }
+      if (cancelToken?.isCancelled ?? false) {
+        if (localFile.existsSync()) await localFile.delete();
+        throw WdmmVfsException('err.downloadCancelled');
+      }
+      onProgress?.call(total, total);
       return;
     }
     await downloadResumable(
@@ -409,7 +418,8 @@ class CloudDriveService extends ChangeNotifier {
     );
   }
 
-  /// 文件上传：读本地文件转流，走驱动 uploadStream 原语。调用方需先查 AccountCaps.write。
+  /// 文件上传：Core 读本地文件、加密（crypt 包装）并 PUT，Dart 不搬字节。
+  /// 调用方需先查 AccountCaps.write。
   Future<void> writeFromFile(
     String accountId,
     String remotePath,
@@ -417,17 +427,19 @@ class CloudDriveService extends ChangeNotifier {
     void Function(int count, int total)? onProgress,
     CancelToken? cancelToken,
   }) async {
-    final driver = _requireDriver(accountId);
     final file = File(localPath);
     final plainSize = file.lengthSync();
     final remote = _remote(accountId, remotePath);
-    await driver.uploadStream(
-      remote,
-      file.openRead(),
-      plainSize,
-      onProgress: onProgress == null ? null : (c) => onProgress(c, plainSize),
-      cancelToken: cancelToken,
+    final result = await RustCoreService.runOffMain<String?>(
+      () => RustCoreService.accountUploadFromFile(accountId, remote, localPath),
     );
+    if (result == null) {
+      throw WdmmVfsException('FFI unavailable');
+    }
+    if (result.startsWith('error:')) {
+      throw WdmmVfsException(result.substring(6));
+    }
+    onProgress?.call(plainSize, plainSize);
   }
 
   /// 幂等建目录：转调驱动 ensureDirectory 原语。调用方需先查 AccountCaps.write 或 mkdir。
@@ -505,30 +517,39 @@ class CloudDriveService extends ChangeNotifier {
     final raw = item.rawUrl;
     if (raw == null) {
       // MustProxy 驱动（拿不到直链，内容得由驱动自己解出来，99 §7.5）：
-      // media_kit 只认 URL，交给 Rust 代理按 Range 逐块取。大小未知时回不了
+      // media_kit 只认 URL，交给 Rust 代理按 1 MiB 分块取。大小未知时回不了
       // Content-Length，明确拒绝。
+      //
+      // 必须让 Rust 自己按 account_id 建驱动并逐块 get_content_range
+      // （wdmm_proxy_register_account）。Dart 回调路径会把「请求的整个
+      // Range」（无 Range 头时就是整文件）一次性读进制表再跨 isolate 传回，
+      // 大文件必然超时/爆内存，播放器只报 fail to open。
       if (item.size <= 0) {
         throw WdmmVfsException('err.streamSizeUnknown|$name');
       }
-      final (:uri, :token) = await RustProxyStreamBridge.expose(
-        size: item.size,
-        name: name,
+      final proxyPort = RustProxyBridge.start(bindMode: 'loopback');
+      if (proxyPort == null) {
+        throw StateError('[cloud] Rust proxy could not be started');
+      }
+      final reply = RustCoreService.proxyRegisterAccount(
         accountId: accountId,
         remotePath: remotePath,
-        // 每次请求都重新取当前驱动实例：驱动会被 registerAccounts 重建，
-        // 而播放中的 URL 不该因此失效。
-        readRange: (start, end) async {
-          final builder = BytesBuilder(copy: false);
-          await for (final chunk in _requireDriver(accountId)
-              .openContentRange(remotePath, start, end)) {
-            builder.add(chunk);
-          }
-          return builder.toBytes();
-        },
+        name: name,
+        size: item.size,
       );
-      _proxyStreamTokens.add(token);
+      if (reply == null || reply.startsWith('error:')) {
+        throw StateError(
+          '[cloud] wdmm_proxy_register_account failed for "$remotePath": $reply',
+        );
+      }
+      final reg = jsonDecode(reply) as Map<String, dynamic>;
+      final token = reg['token'] as String;
+      final host = (reg['host'] as String?) ?? '127.0.0.1';
+      final port = reg['port'] as int;
+      final pathTemplate = reg['path_template'] as String;
+      _accountStreamTokens.add(token);
       return WebDavStreamSource(
-        uri: uri.toString(),
+        uri: 'http://$host:$port$pathTemplate',
         headers: const {},
         name: name,
         remotePath: remotePath,
