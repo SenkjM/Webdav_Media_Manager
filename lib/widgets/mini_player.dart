@@ -148,6 +148,15 @@ class MiniPlayer extends StatelessWidget {
                       ),
                       onPressed: () => player.skipNext(),
                     ),
+                    IconButton(
+                      tooltip: AppLocalizations.of(context)!.actionStop,
+                      iconSize: 24,
+                      icon: Icon(
+                        Icons.stop_rounded,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                      onPressed: () => player.clearQueue(),
+                    ),
                   ],
                 ),
               ),

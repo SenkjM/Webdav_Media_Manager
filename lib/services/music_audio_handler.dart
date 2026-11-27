@@ -679,12 +679,12 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     );
   }
 
-  /// Leave video mode.
+  /// Leave video mode and release the media session.
   ///
-  /// Restores the music session: if a music queue was paused when the video
-  /// started, its MediaItem / queue / paused state come back so the user can
-  /// hit play in the notification and continue. Otherwise the session goes idle
-  /// and the foreground notification for the video is torn down.
+  /// Stopping must **not** restore a paused music MediaItem: a paused item
+  /// keeps the media notification (and its controls) alive after the user has
+  /// stopped playback, which reads as a leaked notification. The music queue is
+  /// released here too; resuming music is an explicit in-app action.
   Future<void> exitVideoMode() async {
     if (_mode != AudioHandlerMode.video && _videoSource == null) return;
     _gateEvents = true;
@@ -692,48 +692,33 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
       try {
         await _videoPlayer?.stop();
       } catch (_) {}
+      try {
+        await _player.stop();
+      } catch (_) {}
       _mode = AudioHandlerMode.music;
       _videoSource = null;
-
-      final track = currentTrack;
-      if (track != null) {
-        final items = _tracks.map(mediaItemFor).toList();
-        queue.add(items);
-        mediaItem.add(items[_index]);
-        _durationController.add(_clipDuration(_player.state.duration));
-        playbackState.add(
-          playbackState.value.copyWith(
-            controls: _controls(playing: false),
-            systemActions: _kSystemActions,
-            androidCompactActionIndices: const [0, 1, 3],
-            processingState: AudioProcessingState.ready,
-            playing: false,
-            updatePosition: position,
-            bufferedPosition: _clipRelative(_player.state.buffer),
-            speed: _player.state.rate,
-            queueIndex: _index,
-          ),
-        );
-      } else {
-        mediaItem.add(null);
-        queue.add(const []);
-        _durationController.add(null);
-        playbackState.add(
-          playbackState.value.copyWith(
-            controls: _controls(playing: false),
-            systemActions: _kSystemActions,
-            androidCompactActionIndices: const [0, 1, 3],
-            processingState: AudioProcessingState.idle,
-            playing: false,
-            updatePosition: Duration.zero,
-            queueIndex: null,
-          ),
-        );
-      }
+      _tracks.clear();
+      _index = -1;
+      _currentPlayableIsLocal = null;
+      mediaItem.add(null);
+      queue.add(const []);
+      _durationController.add(null);
+      playbackState.add(
+        playbackState.value.copyWith(
+          controls: _controls(playing: false),
+          systemActions: _kSystemActions,
+          androidCompactActionIndices: const [0, 1, 3],
+          processingState: AudioProcessingState.idle,
+          playing: false,
+          updatePosition: Duration.zero,
+          queueIndex: null,
+        ),
+      );
+      unawaited(_audioSession?.setActive(false));
     } finally {
       _gateEvents = false;
     }
-    _notifLog('exitVideoMode (musicRestored=${currentTrack != null})');
+    _notifLog('exitVideoMode (released)');
   }
 
   /// Stop any in-flight music session without touching the video player.
